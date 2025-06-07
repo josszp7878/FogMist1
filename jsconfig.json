@@ -1,0 +1,11 @@
+{
+    "compilerOptions": {
+        "target": "ES6",
+        "module": "commonjs"
+    },
+    "include": [
+        "Assets/VolumetricFog2/Resources/Shaders/**/*.cginc",
+        "Assets/VolumetricFog2/Resources/Shaders/**/*.hlsl",
+        "Assets/VolumetricFog2/Resources/Shaders/**/*.shader"
+    ]
+} 

@@ -1,0 +1,25 @@
+---
+description: 
+globs: 
+alwaysApply: false
+---
+## 技术栈
+
+### 1. 引擎与平台
+- Unity 引擎，主要用于3D/2D渲染与资源管理。
+- 渲染管线：采用 Unity Universal Render Pipeline（URP），支持高效的体积雾渲染和自定义渲染特性。
+
+### 2. 编程语言
+- C#：核心逻辑、编辑器扩展、渲染控制等均使用C#实现。
+- HLSL/Compute Shader：用于GPU端的3D噪声纹理生成和体积雾渲染。
+
+### 3. 主要依赖与功能模块
+- 体积雾渲染：自定义URP RenderFeature与Pass，支持体积雾、光线步进、光照散射等高级效果。
+- 3D噪声纹理生成：支持CPU（C#）和GPU（Compute Shader）两种方式，支持Perlin、Simplex、Worley等多种噪声类型。
+- 可视化与调试：集成噪声纹理可视化、参数调节等工具。
+- 性能优化：支持降采样、模糊Pass、自适应步长、早期终止等多种优化手段。
+
+### unity官方的HDRP volume FOG的实现代码包，在目录~HDRP-VolumetricLighting-Reference下面。里面有个README.md 文件描述里面的技术细节。
+
+### 本项目的参考文档 README.MD
+

@@ -1,0 +1,9 @@
+---
+description: 
+globs: 
+alwaysApply: false
+---
+#我想将GPU并行的Compute Shader技术引入到该项目，优化体积雾的渲染效率。
+#参考的代码为官方的HDRP volume FOG的实现代码包，在目录~HDRP-VolumetricLighting-Reference下面。里面有个README.md 文件描述里面的技术细节。
+#我们的目标是将HDRP(~HDRP-VolumetricLighting-Reference) 和VolumetricFog2(Assets\VolumetricFog2) 下面的雾的实现，迁移到一个我自己的基于gpu dispatch 技术优化的实现中，代码在（Assets\VolumetricFog2\Scripts\Edit）目录里面
+#修改的日志都写在Log.md文件里面

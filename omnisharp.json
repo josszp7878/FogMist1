@@ -1,0 +1,29 @@
+{
+  "RoslynExtensionsOptions": {
+    "enableAnalyzersSupport": true
+  },
+  "FormattingOptions": {
+    "enableEditorConfigSupport": true,
+    "organizeImports": true
+  },
+  "FileOptions": {
+    "systemExcludeSearchPatterns": [
+      "**/node_modules/**/*",
+      "**/bin/**/*",
+      "**/obj/**/*",
+      "**/*.cginc",
+      "**/*.hlsl",
+      "**/*.shader",
+      "**/*.compute"
+    ],
+    "excludeSearchPatterns": [
+      "**/node_modules/**/*",
+      "**/bin/**/*",
+      "**/obj/**/*",
+      "**/*.cginc",
+      "**/*.hlsl",
+      "**/*.shader",
+      "**/*.compute"
+    ]
+  }
+} 

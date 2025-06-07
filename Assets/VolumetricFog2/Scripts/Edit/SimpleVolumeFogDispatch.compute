@@ -1,0 +1,213 @@
+#pragma kernel CSMain
+
+// 输出的体积雾渲染结果（RGBA）
+RWTexture2D<float4> Result;
+
+// 体积雾体参数结构体（与C#端一致）
+struct FogVolumeData
+{
+    float3 position;      // 雾体世界空间中心
+    float3 size;          // 雾体盒子尺寸
+    float density;        // 雾体基础密度（0~1）
+    float4 color;         // 雾体颜色（含透明度）
+    int shape;            // 0=Box, 1=Sphere
+    int falloffMode;      // 0=Linear, 1=Exp, 2=Exp2
+    float falloffDistance;// 衰减距离
+    float noiseIntensity; // 噪声强度（0=无噪声）
+    float noiseScale;     // 噪声缩放
+    int blendMode;        // 0=Add, 1=Overwrite, 2=Multiply
+    float4 rotation;      // 雾体旋转（四元数，暂未用）
+    float4x4 invRotation; // 雾体逆旋转矩阵（用于盒体本地空间判断）
+};
+
+// 所有雾体参数的Buffer
+StructuredBuffer<FogVolumeData> FogVolumes;
+int fogVolumeCount;      // 雾体数量
+int stepCount;           // 步进采样数
+float3 cameraPos;        // 摄像机世界坐标
+float4x4 invViewProj;    // 摄像机逆视图投影矩阵
+float cameraNear;        // 摄像机近平面
+float cameraFar;         // 摄像机远平面
+
+// 主光源参数（结构体需与C#端一致）
+struct MainLightData
+{
+    float3 direction;
+    float4 color;
+    float intensity;
+    float4x4 shadowMatrix;
+};
+
+StructuredBuffer<MainLightData> MainLight;
+
+// 点光源参数
+struct PointLightData
+{
+    float3 position;
+    float4 color;
+    float intensity;
+    float range;
+};
+StructuredBuffer<PointLightData> PointLights;
+int pointLightCount;
+
+// 聚光灯参数
+struct SpotLightData
+{
+    float3 position;
+    float3 direction;
+    float4 color;
+    float intensity;
+    float range;
+    float spotAngle;
+};
+StructuredBuffer<SpotLightData> SpotLights;
+int spotLightCount;
+
+// 场景原有颜色输入
+Texture2D<float4> SceneColor;
+
+// 简单3D噪声函数（用于雾体扰动）
+float hash(float3 p) {
+    return frac(sin(dot(p, float3(12.9898,78.233,45.164))) * 43758.5453);
+}
+
+// 雾体falloff函数（根据距离和模式返回衰减系数）
+float ComputeFalloff(float dist, float falloffDist, int mode) {
+    if (mode == 0) return saturate(1.0 - dist / falloffDist); // 线性
+    if (mode == 1) return exp(-dist / max(0.0001, falloffDist)); // 指数
+    if (mode == 2) return exp(-pow(dist / max(0.0001, falloffDist), 2)); // 指数平方
+    return 1.0;
+}
+
+// 主体采样入口，每个线程负责一个像素
+[numthreads(8,8,1)]
+void CSMain (uint3 id : SV_DispatchThreadID)
+{
+    // 获取屏幕尺寸
+    uint width, height;
+    // 获取结果纹理的尺寸
+    Result.GetDimensions(width, height);
+    // 当前像素的归一化坐标（0~1）
+    float2 uv = (id.xy + 0.5) / float2(width, height);
+    // NDC空间坐标（-1~1）
+    float2 ndc = uv * 2.0 - 1.0;
+    // 反投影到世界空间，得到射线起点和终点
+    float4 nearClip = mul(invViewProj, float4(ndc, 0, 1));
+    float4 farClip  = mul(invViewProj, float4(ndc, 1, 1));
+    float3 worldNear = nearClip.xyz / max(nearClip.w, 1e-6);
+    float3 worldFar  = farClip.xyz / max(farClip.w, 1e-6);
+    float3 rayDir = normalize(worldFar - worldNear); // 射线方向
+    float3 rayOrigin = worldNear;
+    float rayLen = cameraFar - cameraNear;           // 步进总长度
+
+    float3 outColor = float3(0,0,0);
+    float totalTransmittance = 1.0;
+
+    float extinctionSum = 0;
+    // 步进采样体积雾
+    stepCount = 128;
+    for (int s = 0; s < stepCount; s++)
+    {
+        // 当前步进距离（从near到far均匀分布）
+        float t = cameraNear + (s + 0.5) / stepCount * rayLen;
+        float3 samplePos = lerp(rayOrigin, worldFar, (s + 0.5) / stepCount);
+        float3 fogStepColor = float3(0,0,0);
+        float extinction = 0;
+
+        // 遍历所有雾体
+        for (int i = 0; i < fogVolumeCount; i++)
+        {
+            FogVolumeData v = FogVolumes[i];
+            float inside = 0;
+            if (v.shape == 0)
+            {
+                float3 local = mul((float3x3)v.invRotation, (samplePos - v.position));
+                float3 halfSize = v.size * 0.5;
+                inside = all(abs(local) <= halfSize) ? 1 : 0;
+            }
+            else if (v.shape == 1)
+            {
+                inside = distance(samplePos, v.position) <= v.size.x ? 1 : 0;
+            }
+            if (inside > 0)
+            {
+                float dist = (v.shape == 0) ? length((samplePos - v.position)) : distance(samplePos, v.position);
+                float falloff = ComputeFalloff(dist, v.falloffDistance, v.falloffMode);
+                // float falloff = 1.0;
+                float n = v.noiseIntensity > 0 ? lerp(1, hash(samplePos * v.noiseScale), v.noiseIntensity) : 1;
+                float d = v.density * falloff * n;
+
+                // 主光源照明与阴影
+                // float3 lightDir = normalize(MainLight[0].direction);
+                // float NdotL = 1.0;
+                float shadow = 1.0; // 可采样阴影贴图
+                float3 lightColor = MainLight[0].color.rgb * MainLight[0].intensity * shadow;
+
+                // 点光源体积光
+                for (int j = 0; j < pointLightCount; j++)
+                {
+                    float3 toLight = PointLights[j].position - samplePos;
+                    float distPL = length(toLight);
+                    float att = saturate(1.0 - distPL / PointLights[j].range);
+                    lightColor += PointLights[j].color.rgb * PointLights[j].intensity * att;
+                }
+                // 聚光灯体积光
+                for (int k = 0; k < spotLightCount; k++)
+                {
+                    float3 toSpot = SpotLights[k].position - samplePos;
+                    float distSL = length(toSpot);
+                    if (distSL > SpotLights[k].range) continue;
+                    float3 spotDir = normalize(SpotLights[k].direction);
+                    float3 dirToSample = normalize(samplePos - SpotLights[k].position);
+                    float cosAngle = dot(spotDir, dirToSample);
+                    float spotCos = cos(radians(SpotLights[k].spotAngle * 0.5));
+                    if (cosAngle < spotCos) continue;
+                    float angleAtt = saturate((cosAngle - spotCos) / (1.0 - spotCos));
+                    float att = saturate(1.0 - distSL / SpotLights[k].range) * angleAtt;
+                    lightColor += SpotLights[k].color.rgb * SpotLights[k].intensity * att;
+                }
+
+                // 体积光散射（Henyey-Greenstein等，可自定义phase函数）
+                float phase = 1.0; // 可实现HG/Mie等
+                // 距离/高度衰减
+                float atten = 1.0; // 可实现距离/高度相关的衰减
+
+                // 累加
+                extinction += d;
+                fogStepColor += v.color.rgb * d * lightColor * phase * atten;
+                // Result[id.xy] = float4(NdotL, NdotL, NdotL, 1); return;
+                // if (s == 0) {
+                //     // 只在第一个步进点输出
+                //     Result[id.xy] = float4((samplePos.x+100)/200, (samplePos.y+100)/200, (samplePos.z+100)/200, 1);
+                //     return;
+                // }
+            }
+        }
+        extinctionSum += extinction;
+        if (extinction > 0)
+            fogStepColor /= extinction;
+        else
+            fogStepColor = float3(0,0,0);
+
+        float stepLen = rayLen / stepCount;
+        // 物理透射率递减（Beer-Lambert定律）
+        float transmittance = exp(-extinction * stepLen);
+        // 本步雾贡献
+        float3 stepScattering = fogStepColor * (1 - transmittance);
+        // 累加到最终颜色，乘以累计透射率
+        outColor += totalTransmittance * stepScattering;
+        // 更新累计透射率
+        totalTransmittance *= transmittance;
+        // 若T已很小，可提前终止
+        if (totalTransmittance < 0.01) break;
+    }
+    // 采样场景原有颜色
+    float4 sceneColor = SceneColor[id.xy];
+    // 雾的遮挡度
+    float fogAlpha = 1 - totalTransmittance;
+    // 雾叠加混合
+    float3 finalColor = lerp(sceneColor.rgb, outColor, fogAlpha);
+    // float3 finalColor = float3(extinction,extinction,extinction);
+    Result[id.xy] = float4(finalColor, 1);
+} 

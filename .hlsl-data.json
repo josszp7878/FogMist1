@@ -1,0 +1,32 @@
+{
+    "includes": {
+        "Raymarch2D.cginc": [
+            "Assets/VolumetricFog2/Resources/Shaders/Raymarch2D.cginc"
+        ],
+        "API.hlsl": [
+            "Assets/VolumetricFog2/Resources/Shaders/API.hlsl"
+        ],
+        "CommonsURP.hlsl": [
+            "Assets/VolumetricFog2/Resources/Shaders/CommonsURP.hlsl"
+        ],
+        "Input.hlsl": [
+            "Assets/VolumetricFog2/Resources/Shaders/Input.hlsl"
+        ]
+    },
+    "defines": {
+        "VF2_DEPTH_PEELING": 1,
+        "VF2_POINT_LIGHTS": 1,
+        "VF2_RECEIVE_SHADOWS": 1,
+        "VF2_SHAPE_SPHERE": 0,
+        "VF2_DETAIL_NOISE": 1,
+        "VF2_CONSTANT_DENSITY": 0,
+        "VF2_DISTANCE": 1,
+        "VF2_VOIDS": 1,
+        "VF2_FOW": 1,
+        "VF2_SURFACE": 1,
+        "VF2_DEPTH_GRADIENT": 1,
+        "VF2_HEIGHT_GRADIENT": 1,
+        "VF2_LIGHT_COOKIE": 1,
+        "VF2_DIFFUSION_SMOOTH": 1
+    }
+} 
